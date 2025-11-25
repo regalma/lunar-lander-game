@@ -218,8 +218,8 @@
         <div id="start-overlay" class="modal active">
             <h2 class="text-3xl font-bold text-yellow-300 mb-4">LUNAR LANDER CHALLENGE</h2>
             <p class="text-gray-300 mb-6">
-                任务目标: 在 <span class="text-red-400 font-bold">5.0 秒内</span> 安全着陆于平台！<br>
-                <span class="text-green-400">1.0 秒内着陆将解锁烟花表演！</span>
+                任务目标: 在 <span class="text-red-400 font-bold">10.0 秒内</span> 安全着陆于平台！<br>
+                <span class="text-green-400">5.0 秒内着陆将解锁烟花表演！</span>
             </p>
             <div id="countdown-display" class="text-6xl font-extrabold text-white hidden">3</div>
             <button id="start-btn" class="btn mt-4">请求陀螺仪权限并开始</button>
@@ -288,8 +288,8 @@
         const SAFE_LANDING_SPEED = 2.0; // 垂直速度阈值
         const SAFE_HORIZONTAL_SPEED = 1.0; // 水平速度阈值
         const SAFE_ANGLE = 0.2; // 弧度 (~11度)
-        const MAX_LANDING_TIME = 5.0; // 5秒时间限制
-        const FIREWORKS_LANDING_TIME = 1.0; // 1秒烟花触发
+        const MAX_LANDING_TIME = 10.0; // 10秒时间限制
+        const FIREWORKS_LANDING_TIME = 5.0; // 5秒烟花触发
 
         // 游戏状态
         let gameState = 'START'; // START, COUNTDOWN, PLAYING, WON, CRASHED
@@ -675,7 +675,7 @@
             let bonusScore = 1000;
             let fireworks = false;
 
-            // 1秒极速着陆判定
+            // 5秒极速着陆判定
             if (landingTime <= FIREWORKS_LANDING_TIME) {
                 title = '完美着陆！(烟花盛宴)';
                 desc = `极速着陆! 耗时: ${landingTime.toFixed(2)}s。你是一位登月之神!`;
