@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>登月模拟器 (Lunar Lander)</title>
+    <title>登月模拟器：极速挑战</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
@@ -21,7 +21,7 @@
             width: 100%;
             height: 100vh;
             display: flex;
-            flex-direction: column; /* 手机模式下垂直布局 */
+            flex-direction: column; 
             justify-content: center;
             align-items: center;
             background: radial-gradient(circle at center, #1e293b 0%, #020617 100%);
@@ -30,8 +30,8 @@
         /* 调整 Canvas 大小以适应手机视图 */
         #gameCanvas {
             max-width: 100%;
-            max-height: calc(100vh - 120px); /* 留出空间给底部控制按钮 */
-            aspect-ratio: 8 / 6; /* 保持原始比例 */
+            max-height: calc(100vh - 120px); 
+            aspect-ratio: 8 / 6; 
             box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
             border: 2px solid #334155;
             background-color: transparent;
@@ -191,6 +191,7 @@
                 <div class="text-right">
                     <div class="text-xl text-green-400 hud-text">ALTITUDE: <span id="alt-val" class="text-white">1000</span></div>
                     <div class="text-sm text-gray-400">SCORE: <span id="score-val">0</span></div>
+                    <div class="text-sm text-gray-400">TIME: <span id="timer-val" class="text-yellow-400">0.00s</span></div>
                 </div>
             </div>
 
@@ -212,6 +213,18 @@
                 </div>
             </div>
         </div>
+        
+        <!-- 启动/倒计时遮罩 -->
+        <div id="start-overlay" class="modal active">
+            <h2 class="text-3xl font-bold text-yellow-300 mb-4">LUNAR LANDER CHALLENGE</h2>
+            <p class="text-gray-300 mb-6">
+                任务目标: 在 <span class="text-red-400 font-bold">5.0 秒内</span> 安全着陆于平台！<br>
+                <span class="text-green-400">1.0 秒内着陆将解锁烟花表演！</span>
+            </p>
+            <div id="countdown-display" class="text-6xl font-extrabold text-white hidden">3</div>
+            <button id="start-btn" class="btn mt-4">请求陀螺仪权限并开始</button>
+            <div id="gyro-status" class="text-sm text-gray-400 mt-2">点击开始，然后倾斜手机来控制旋转。</div>
+        </div>
 
         <!-- 结算弹窗 -->
         <div id="game-modal" class="modal">
@@ -220,7 +233,7 @@
             <div id="modal-stats" class="text-sm bg-gray-800 p-3 rounded mb-4 text-left font-mono">
                 <!-- 统计数据 -->
             </div>
-            <button class="btn" onclick="resetGame()">PLAY AGAIN</button>
+            <button class="btn" onclick="resetGame(true)">PLAY AGAIN</button>
         </div>
         
         <!-- 桌面控制提示 -->
@@ -233,7 +246,7 @@
             <!-- 左侧控制：侧推左 & 旋转左 -->
             <div class="side-controls">
                 <button id="btn-side-left" class="control-btn">&#9664;</button> <!-- 左箭头 -->
-                <div class="text-xs text-gray-400 text-center -mt-1">Side/H-Thrust</div>
+                <div class="text-xs text-gray-400 text-center -mt-1">H-Thrust</div>
                 <button id="btn-rotate-left" class="control-btn text-xl">A</button>
                 <div class="text-xs text-gray-400 text-center -mt-1">Rotate</div>
             </div>
@@ -248,7 +261,7 @@
             <!-- 右侧控制：侧推右 & 旋转右 -->
             <div class="side-controls">
                 <button id="btn-side-right" class="control-btn">&#9654;</button> <!-- 右箭头 -->
-                <div class="text-xs text-gray-400 text-center -mt-1">Side/H-Thrust</div>
+                <div class="text-xs text-gray-400 text-center -mt-1">H-Thrust</div>
                 <button id="btn-rotate-right" class="control-btn text-xl">D</button>
                 <div class="text-xs text-gray-400 text-center -mt-1">Rotate</div>
             </div>
@@ -275,13 +288,17 @@
         const SAFE_LANDING_SPEED = 2.0; // 垂直速度阈值
         const SAFE_HORIZONTAL_SPEED = 1.0; // 水平速度阈值
         const SAFE_ANGLE = 0.2; // 弧度 (~11度)
-        
+        const MAX_LANDING_TIME = 5.0; // 5秒时间限制
+        const FIREWORKS_LANDING_TIME = 1.0; // 1秒烟花触发
+
         // 游戏状态
-        let gameState = 'START'; // START, PLAYING, WON, CRASHED
+        let gameState = 'START'; // START, COUNTDOWN, PLAYING, WON, CRASHED
         let particles = [];
         let stars = [];
         let terrain = [];
         let score = 0;
+        let gyroEnabled = false;
+        let rotationInput = 0; // Gyro rotation input
 
         // 登月舱对象
         const lander = {
@@ -292,14 +309,16 @@
             vx: 0,
             vy: 0,
             angle: 0,
-            fuel: 100,
+            fuel: 50, // 燃料减半
             thrusting: false,
             rotatingLeft: false,
             rotatingRight: false,
             sideThrustLeft: false,
             sideThrustRight: false,
             crashed: false,
-            landed: false
+            landed: false,
+            startTime: 0,
+            elapsedTime: 0
         };
 
         // --- 输入处理状态 ---
@@ -315,60 +334,121 @@
         // --- 键盘事件监听 ---
         window.addEventListener('keydown', (e) => {
             keys[e.code] = true;
-            if(gameState === 'START') startGame();
         });
 
         window.addEventListener('keyup', (e) => {
             keys[e.code] = false;
         });
         
+        // --- 陀螺仪控制 ---
+        function requestOrientationPermission() {
+            const gyroStatus = document.getElementById('gyro-status');
+            const btnRotateLeft = document.getElementById('btn-rotate-left');
+            const btnRotateRight = document.getElementById('btn-rotate-right');
+
+            if (typeof DeviceOrientationEvent !== 'undefined') {
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    // iOS 13+ logic
+                    DeviceOrientationEvent.requestPermission()
+                        .then(response => {
+                            if (response == 'granted') {
+                                gyroEnabled = true;
+                                window.addEventListener('deviceorientation', handleGyro);
+                                btnRotateLeft.style.display = 'none';
+                                btnRotateRight.style.display = 'none';
+                                gyroStatus.innerText = '陀螺仪: 激活 (倾斜手机旋转)';
+                            } else {
+                                gyroEnabled = false;
+                                btnRotateLeft.style.display = 'flex';
+                                btnRotateRight.style.display = 'flex';
+                                gyroStatus.innerText = '陀螺仪: 拒绝 (使用屏幕 A/D 按钮)';
+                            }
+                        })
+                        .catch(err => {
+                            console.error("Gyro permission request failed:", err);
+                            gyroStatus.innerText = '陀螺仪: 错误 (使用屏幕 A/D 按钮)';
+                        });
+                } else {
+                    // Non-iOS 13+ browsers (Android, etc.)
+                    gyroEnabled = true;
+                    window.addEventListener('deviceorientation', handleGyro);
+                    btnRotateLeft.style.display = 'none';
+                    btnRotateRight.style.display = 'none';
+                    gyroStatus.innerText = '陀螺仪: 激活 (倾斜手机旋转)';
+                }
+            } else {
+                gyroEnabled = false;
+                btnRotateLeft.style.display = 'flex';
+                btnRotateRight.style.display = 'flex';
+                gyroStatus.innerText = '陀螺仪: 不支持 (使用屏幕 A/D 按钮)';
+            }
+        }
+
+        function handleGyro(event) {
+            // event.gamma typically corresponds to side-to-side tilt (roll)
+            const tiltAngle = event.gamma || 0; 
+            const maxTilt = 30; // 30 degrees of tilt is max input
+            
+            // Map tilt angle to rotation input value (-1 to 1)
+            rotationInput = Math.max(-1, Math.min(1, tiltAngle / maxTilt));
+        }
+
         // --- 触摸事件监听 (Mobile) ---
         const buttons = {
             'btn-thrust': 'thrust',
-            'btn-rotate-left': 'rotateLeft',
-            'btn-rotate-right': 'rotateRight',
             'btn-side-left': 'sideThrustLeft',
             'btn-side-right': 'sideThrustRight',
+            'btn-rotate-left': 'rotateLeft', // Fallback
+            'btn-rotate-right': 'rotateRight', // Fallback
         };
 
         function setupTouchControls() {
             Object.keys(buttons).forEach(id => {
                 const btn = document.getElementById(id);
                 const control = buttons[id];
+                if (!btn) return;
 
-                // Prevent mouse events from firing after touch events
                 btn.addEventListener('mousedown', (e) => e.preventDefault()); 
 
-                // Touch Start (Press Down)
-                btn.addEventListener('touchstart', (e) => {
+                const startHandler = (e) => {
                     e.preventDefault();
-                    touchState[control] = true;
+                    if (gameState === 'PLAYING') {
+                        touchState[control] = true;
+                    }
                     btn.classList.add('active-touch');
-                    if(gameState === 'START') startGame();
-                }, { passive: false });
-
-                // Touch End (Release)
+                };
+                
                 const releaseHandler = (e) => {
                     e.preventDefault();
                     touchState[control] = false;
                     btn.classList.remove('active-touch');
                 };
 
+                btn.addEventListener('touchstart', startHandler, { passive: false });
                 btn.addEventListener('touchend', releaseHandler, { passive: false });
-                btn.addEventListener('touchcancel', releaseHandler, { passive: false }); // Important for when finger slides off
+                btn.addEventListener('touchcancel', releaseHandler, { passive: false });
             });
         }
         
-        // --- 主输入逻辑：合并键盘和触摸 ---
+        // --- 主输入逻辑：合并键盘、触摸和陀螺仪 ---
         function handleInput() {
             if (gameState !== 'PLAYING') return;
 
-            // 旋转 (A/D or Touch)
-            lander.rotatingLeft = keys['KeyA'] || touchState.rotateLeft;
-            lander.rotatingRight = keys['KeyD'] || touchState.rotateRight;
-            
-            if (lander.rotatingLeft) lander.angle -= ROTATION_SPEED;
-            if (lander.rotatingRight) lander.angle += ROTATION_SPEED;
+            // 旋转 (Gyro or Keyboard/Touch fallback)
+            if (gyroEnabled) {
+                // 陀螺仪控制旋转
+                lander.angle += rotationInput * ROTATION_SPEED * 1.5;
+                // 仅用于火焰显示
+                lander.rotatingLeft = rotationInput < -0.1; 
+                lander.rotatingRight = rotationInput > 0.1;
+            } else {
+                // 键盘/触摸控制旋转
+                lander.rotatingLeft = keys['KeyA'] || touchState.rotateLeft;
+                lander.rotatingRight = keys['KeyD'] || touchState.rotateRight;
+                
+                if (lander.rotatingLeft) lander.angle -= ROTATION_SPEED;
+                if (lander.rotatingRight) lander.angle += ROTATION_SPEED;
+            }
             
             // 主引擎 (W/Up Arrow or Touch)
             lander.thrusting = (keys['KeyW'] || keys['ArrowUp'] || touchState.thrust) && lander.fuel > 0;
@@ -382,7 +462,7 @@
             }
         }
 
-        // --- 游戏核心函数 (保持不变) ---
+        // --- 游戏核心函数 ---
         
         function initStars() {
             stars = [];
@@ -411,36 +491,73 @@
                 if (x >= padX && x <= padX + LANDING_PAD_WIDTH) {
                     y = canvas.height - 50;
                 } else {
-                    // 随机地形，但稍微平滑一点
                     y = canvas.height - 50 - (Math.random() * 80); 
                 }
                 terrain.push({x, y});
             }
         }
 
-        function resetGame() {
+        function resetGame(shouldStart = false) {
             lander.x = canvas.width / 2;
             lander.y = 80;
-            lander.vx = (Math.random() - 0.5) * 1.5; // 随机初始水平速度
+            lander.vx = (Math.random() - 0.5) * 1.5; 
             lander.vy = 0;
             lander.angle = 0;
-            lander.fuel = 100;
+            lander.fuel = 50; // 燃料重置
             lander.crashed = false;
             lander.landed = false;
+            lander.startTime = 0;
+            lander.elapsedTime = 0;
             score = 0;
             
             particles = [];
             modal.classList.remove('active');
-            gameState = 'PLAYING';
             
             generateTerrain();
-            loop();
+
+            if (shouldStart) {
+                 // 如果是"PLAY AGAIN"按钮触发，直接进入倒计时
+                startGame(); 
+            }
+        }
+
+        function startCountdown() {
+            gameState = 'COUNTDOWN';
+            const countdownDisplay = document.getElementById('countdown-display');
+            let count = 3;
+            countdownDisplay.innerText = count;
+            countdownDisplay.classList.remove('hidden');
+            document.getElementById('start-overlay').classList.add('active');
+
+            const countdownInterval = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    countdownDisplay.innerText = count;
+                } else if (count === 0) {
+                    countdownDisplay.innerText = 'GO!';
+                } else {
+                    clearInterval(countdownInterval);
+                    document.getElementById('start-overlay').classList.remove('active');
+                    
+                    // 倒计时结束后开始游戏
+                    gameState = 'PLAYING';
+                    lander.startTime = Date.now();
+                }
+            }, 1000); 
         }
 
         function startGame() {
-            initStars();
-            generateTerrain();
-            resetGame();
+            // 设置启动按钮逻辑
+            document.getElementById('start-overlay').classList.add('active');
+            document.getElementById('start-btn').style.display = 'block';
+            document.getElementById('countdown-display').classList.add('hidden');
+
+            document.getElementById('start-btn').onclick = () => {
+                requestOrientationPermission(); 
+                document.getElementById('start-btn').style.display = 'none';
+                resetGame(false); // 仅重置状态，不启动游戏循环
+                startCountdown();
+            };
         }
 
         function createParticle(x, y, angle, speed, life, color) {
@@ -457,10 +574,12 @@
         function updatePhysics() {
             if (gameState !== 'PLAYING') return;
 
+            lander.elapsedTime = (Date.now() - lander.startTime) / 1000;
+            
             // 重力
             lander.vy += GRAVITY;
 
-            // 主引擎推力 (沿着角度方向)
+            // 主引擎推力
             if (lander.thrusting) {
                 lander.vx += Math.sin(lander.angle) * THRUST_POWER;
                 lander.vy -= Math.cos(lander.angle) * THRUST_POWER;
@@ -474,19 +593,15 @@
             }
 
             // 侧向推力 (RCS)
-            // 左推 (ArrowLeft / Touch) -> 向左加速
             if (lander.sideThrustLeft) {
                 lander.vx -= Math.cos(lander.angle) * SIDE_THRUST_POWER;
                 lander.vy -= Math.sin(lander.angle) * SIDE_THRUST_POWER;
-                // 粒子从右侧喷出
                 createParticle(lander.x + Math.cos(lander.angle)*10, lander.y + Math.sin(lander.angle)*10, lander.angle + Math.PI, 1.5, 10, '#ffffff');
             }
 
-            // 右推 (ArrowRight / Touch) -> 向右加速
             if (lander.sideThrustRight) {
                 lander.vx += Math.cos(lander.angle) * SIDE_THRUST_POWER;
                 lander.vy += Math.sin(lander.angle) * SIDE_THRUST_POWER;
-                // 粒子从左侧喷出
                 createParticle(lander.x - Math.cos(lander.angle)*10, lander.y - Math.sin(lander.angle)*10, lander.angle, 1.5, 10, '#ffffff');
             }
 
@@ -540,27 +655,56 @@
             for(let i=0; i<50; i++) {
                 createParticle(lander.x, lander.y, Math.random() * Math.PI * 2, Math.random() * 5, 50, '#ef4444');
             }
-            showModal('MISSION FAILED', `CRASHED: ${reason}`, false);
+            showModal('任务失败', `坠毁: ${reason}`, false);
         }
 
         function gameWin() {
+            const landingTime = lander.elapsedTime;
+            
+            // 5秒时间限制失败判定
+            if (landingTime > MAX_LANDING_TIME) {
+                gameCrash(`着陆时间过长: ${landingTime.toFixed(1)}s (限制 ${MAX_LANDING_TIME.toFixed(1)}s)`);
+                return;
+            }
+
             gameState = 'WON';
             lander.landed = true;
-            const fuelBonus = Math.floor(lander.fuel * 10);
-            score += 1000 + fuelBonus;
-            showModal('SUCCESS!', `Safe landing! Fuel Bonus: ${fuelBonus}`, true);
+            
+            let title = '任务成功！';
+            let desc = `安全着陆，耗时: ${landingTime.toFixed(2)}s。`;
+            let bonusScore = 1000;
+            let fireworks = false;
+
+            // 1秒极速着陆判定
+            if (landingTime <= FIREWORKS_LANDING_TIME) {
+                title = '完美着陆！(烟花盛宴)';
+                desc = `极速着陆! 耗时: ${landingTime.toFixed(2)}s。你是一位登月之神!`;
+                bonusScore = 5000;
+                fireworks = true;
+                // 添加大量粒子 (烟花)
+                for(let i=0; i<100; i++) {
+                    createParticle(lander.x, lander.y, Math.random() * Math.PI * 2, Math.random() * 8, 80, `hsl(${Math.random() * 360}, 100%, 50%)`);
+                }
+            }
+
+            const fuelBonus = Math.floor(lander.fuel * 20); // 燃料奖励更高
+            score += bonusScore + fuelBonus;
+
+            showModal(title, desc, true, fuelBonus);
         }
 
-        function showModal(title, desc, success) {
+        function showModal(title, desc, success, fuelBonus = 0) {
             document.getElementById('modal-title').innerText = title;
             document.getElementById('modal-title').className = success ? 'text-3xl font-bold text-green-400 mb-2' : 'text-3xl font-bold text-red-500 mb-2';
             document.getElementById('modal-desc').innerText = desc;
             
             const statsHtml = `
-                <div>Vertical Speed: ${lander.vy.toFixed(2)} m/s</div>
-                <div>Horizontal Speed: ${lander.vx.toFixed(2)} m/s</div>
-                <div>Angle: ${(lander.angle * 180 / Math.PI).toFixed(1)}°</div>
-                <div>Fuel Remaining: ${Math.floor(lander.fuel)}%</div>
+                <div>垂直速度: ${lander.vy.toFixed(2)} m/s</div>
+                <div>水平速度: ${lander.vx.toFixed(2)} m/s</div>
+                <div>角度: ${(lander.angle * 180 / Math.PI).toFixed(1)}°</div>
+                <div>剩余燃料: ${Math.floor(lander.fuel)}%</div>
+                ${success ? `<div>总耗时: ${lander.elapsedTime.toFixed(2)}s</div>` : ''}
+                ${success && fuelBonus > 0 ? `<div class="text-yellow-400 font-bold">燃料奖励: +${fuelBonus}</div>` : ''}
             `;
             document.getElementById('modal-stats').innerHTML = statsHtml;
 
@@ -616,7 +760,7 @@
             ctx.fillStyle = '#4ade80';
             ctx.font = '12px monospace';
             ctx.textAlign = 'center';
-            ctx.fillText('LANDING ZONE', canvas.width/2, padY + 25);
+            ctx.fillText('着陆区', canvas.width/2, padY + 25);
 
             // 画粒子
             particles.forEach(p => {
@@ -677,13 +821,15 @@
 
         function updateHUD() {
             fuelBar.style.width = `${lander.fuel}%`;
-            if (lander.fuel < 20) fuelBar.classList.replace('bg-green-500', 'bg-red-500');
+            if (lander.fuel < 10) fuelBar.classList.replace('bg-green-500', 'bg-red-500');
             else fuelBar.classList.replace('bg-red-500', 'bg-green-500');
 
             // 高度 (反转坐标系)
             let alt = Math.max(0, (canvas.height - 50) - lander.y - 10).toFixed(0);
             altVal.innerText = alt;
             document.getElementById('score-val').innerText = score;
+            document.getElementById('timer-val').innerText = lander.startTime > 0 ? lander.elapsedTime.toFixed(2) + 's' : '0.00s';
+
 
             // 速度与角度显示颜色逻辑
             const hSpeed = lander.vx.toFixed(1);
@@ -701,25 +847,22 @@
         }
 
         function loop() {
-            if (gameState === 'START') {
-                // 如果是移动端，触摸任何按钮即可开始
-                return; 
+            if (gameState === 'PLAYING') {
+                handleInput();
+                updatePhysics();
             }
-
-            handleInput();
-            updatePhysics();
             updateParticles();
             draw();
-
-            if (gameState === 'PLAYING') {
-                requestAnimationFrame(loop);
-            }
+            requestAnimationFrame(loop);
         }
 
         // 页面加载完成时：设置触摸控制和启动游戏
         window.onload = function() {
             setupTouchControls();
-            resetGame();
+            initStars();
+            generateTerrain();
+            startGame(); // 显示初始的启动界面
+            loop(); // 保持绘制循环以显示背景和HUD
         }
 
     </script>
